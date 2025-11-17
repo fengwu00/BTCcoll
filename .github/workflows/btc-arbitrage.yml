@@ -1,0 +1,32 @@
+name: BTC Arbitrage Test
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # 每小時整點
+  workflow_dispatch:  # 手動觸發
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    - name: Run BTC Arbitrage Script
+      run: python btc_arbitrage_test.py
+    - name: Upload CSV as Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: arbitrage-log
+        path: btc_arbitrage_log.csv
+    - name: Upload Plots
+      uses: actions/upload-artifact@v4
+      with:
+        name: arbitrage-plots
+        path: arbitrage_plots/
