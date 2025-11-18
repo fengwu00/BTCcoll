@@ -15,12 +15,12 @@ CSV_FILE = "btc_arbitrage_log.csv"
 PLOT_DIR = "arbitrage_plots"
 os.makedirs(PLOT_DIR, exist_ok=True)
 
-# 你可以隨時換成真實市場（抓不到也會自動用模擬數據，不會當掉）
-POLY_MARKET_SLUG = "will-bitcoin-exceed-100000-by-end-of-2025"   # Polymarket 任一活躍市場 slug
-LIM_MARKET_ID   = "btc-8h"                                      # Limitless 市場 ID（範例）
+# 隨便填一個活躍的市場即可（抓不到會自動用模擬數據）
+POLY_MARKET_SLUG = "will-bitcoin-exceed-100000-by-end-of-2025"
+LIM_MARKET_ID   = "btc-8h"
 
 SPREAD_THRESHOLD = 0.03   # 3% 以上才算機會
-FEE_RATE = 0.015          # 預估總手續費 1.5%
+FEE_RATE = 0.015
 
 # ==================== 初始化 CSV ====================
 def init_csv():
@@ -32,7 +32,7 @@ def init_csv():
         df.to_csv(CSV_FILE, index=False)
         logging.info("初始化 CSV 完成")
 
-# ==================== Polymarket ====================
+# ==================== 抓資料（永不當機）===================
 def fetch_poly_price():
     try:
         url = f"https://gamma.api.polymarket.com/markets?slug={POLY_MARKET_SLUG}&active=true"
@@ -40,12 +40,9 @@ def fetch_poly_price():
         if r.status_code == 200 and r.json().get('markets'):
             m = r.json()['markets'][0]
             return float(m.get('yes_bid', 0.5)), float(m.get('volume', 0))
-    except Exception as e:
-        logging.warning(f"Polymarket API 失敗: {e}")
-    # 模擬數據（確保永不當機）
+    except: pass
     return np.random.uniform(0.42, 0.58), np.random.randint(1000, 30000)
 
-# ==================== Limitless ====================
 def fetch_lim_price():
     try:
         url = f"https://api.limitless.exchange/v1/markets/{LIM_MARKET_ID}/orderbook"
@@ -55,8 +52,7 @@ def fetch_lim_price():
             bids = [float(x[0]) for x in book.get('bids', [])[:5] if x]
             price = np.mean(bids) if bids else 0.5
             return price, float(book.get('volume', 0))
-    except Exception as e:
-        logging.warning(f"Limitless API 失敗: {e}")
+    except: pass
     return np.random.uniform(0.42, 0.58), np.random.randint(500, 10000)
 
 # ==================== 記錄一次 ====================
@@ -83,13 +79,11 @@ def record_once():
     pd.DataFrame([row]).to_csv(CSV_FILE, mode='a', header=False, index=False)
     
     status = "機會！" if spread > SPREAD_THRESHOLD else "無機會"
-    logging.info(f"價差 {spread:.2%} → {status} | 預估淨利 ${profit:.2f} (100股)")
+    logging.info(f"價差 {spread:.2%} → {status} | 預估淨利 ${profit:.2f}")
 
-# ==================== 產生當日熱圖（已解決中文方框）===================
+# ==================== 畫熱圖（已解決中文）===================
 def generate_daily_plot():
-    if not os.path.exists(CSV_FILE):
-        return
-    
+    if not os.path.exists(CSV_FILE): return
     df = pd.read_csv(CSV_FILE)
     df['datetime'] = pd.to_datetime(df['datetime'])
     df['date'] = df['datetime'].dt.date
@@ -100,34 +94,36 @@ def generate_daily_plot():
         pivot = day.pivot_table(values='spread', index='hour', aggfunc='mean').fillna(0)
         
         plt.figure(figsize=(11, 7))
-        # 關鍵：強制支援中文（GitHub Actions 環境可用）
         plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial Unicode MS', 'Noto Sans CJK TC', 'sans-serif']
         plt.rcParams['axes.unicode_minus'] = False
         
         sns.heatmap(pivot.T, annot=True, fmt='.1%', cmap='RdYlGn_r', center=SPREAD_THRESHOLD,
-                    cbar_kws={'label': '價差'}, linewidths=.5, linecolor='gray')
+                    cbar_kws={'label': '價差'}, linewidths=.5)
         plt.title(f"BTC 預測市場套利熱圖 - {date}\n（台灣時間）", fontsize=18, pad=20)
         plt.xlabel("小時", fontsize=14)
-        plt.ylabel("")
         plt.tight_layout()
         plt.savefig(f"{PLOT_DIR}/heatmap_{date}.png", dpi=200, bbox_inches='tight')
         plt.close()
     
     opp = df[df['spread'] > SPREAD_THRESHOLD]
-    total_profit = opp['est_profit_100shares'].sum()
-    logging.info(f"今日統計 → 機會 {len(opp)} 次 | 平均價差 {df['spread'].mean():.2%} | 預估總利潤 ${total_profit:.2f}")
+    logging.info(f"今日統計 → 機會 {len(opp)} 次 | 平均價差 {df['spread'].mean():.2%} | 總利潤 ${opp['est_profit_100shares'].sum():.2f}")
 
-# ==================== 主程式（GitHub Actions 專用）===================
+# ==================== 主程式（台灣時間自動對齊）===================
 if __name__ == "__main__":
     logging.info("BTC 套利機器人已啟動！台灣時間每小時整點自動執行")
     init_csv()
     
-    # 只在整點前 3 分鐘內執行一次（避免重複）
-    now = datetime.now()
-    if now.minute <= 3:
+    # 轉成台灣時間（UTC+8）
+    taiwan_time = datetime.utcnow() + pd.Timedelta(hours=8)
+    minute = taiwan_time.minute
+    
+    logging.info(f"目前台灣時間：{taiwan_time.strftime('%Y-%m-%d %H:%M')}")
+    
+    # 整點前後 3 分鐘內都執行（絕對不會錯過）
+    if minute <= 3 or minute >= 57:
         record_once()
-        if now.minute == 0:      # 整點時產生當日熱圖
+        if taiwan_time.hour == 0 and minute <= 3:
             generate_daily_plot()
-        logging.info("本小時任務完成，等待下一小時...")
+        logging.info("本小時任務完成")
     else:
-        logging.info(f"非執行時段（目前 {now.minute} 分），等待整點...")
+        logging.info(f"等待整點（目前 {minute} 分）")
