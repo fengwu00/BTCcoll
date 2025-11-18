@@ -1,32 +1,31 @@
-name: BTC Arbitrage Test
+name: BTC 套利每小時自動執行（台灣時間）
 
 on:
   schedule:
-    - cron: '0 * * * *'  # 每小時整點
-  workflow_dispatch:  # 手動觸發
+    - cron: '0,30 * * * *'    # UTC 每小時 00 和 30 分都觸發一次，保證至少會中一次
+  workflow_dispatch:
 
 jobs:
-  run-script:
+  run-bot:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-    - name: Run BTC Arbitrage Script
-      run: python btc_arbitrage_test.py
-    - name: Upload CSV as Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: arbitrage-log
-        path: btc_arbitrage_log.csv
-    - name: Upload Plots
-      uses: actions/upload-artifact@v4
-      with:
-        name: arbitrage-plots
-        path: arbitrage_plots/
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 安裝套件
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: 執行機器人
+        run: python btc_arbitrage_test.py
+      - name: 上傳 CSV
+        uses: actions/upload-artifact@v4
+        with:
+          name: BTC紀錄_${{ github.run_number }}
+          path: btc_arbitrage_log.csv
+      - name: 上傳熱圖
+        uses: actions/upload-artifact@v4
+        with:
+          name: BTC熱圖_${{ github.run_number }}
+          path: arbitrage_plots/
